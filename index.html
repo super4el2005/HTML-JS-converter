@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <title>HTML → JS Converter</title>
+
+    <!-- CodeMirror 5 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+    <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/xml/xml.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/htmlmixed/htmlmixed.min.js"></script>
+
+    <style>
+        body {
+            margin: 0;
+            background: #1e1e1e;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+
+        h1 {
+            text-align: center;
+            padding: 20px;
+            margin: 0;
+        }
+
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            padding: 10px;
+        }
+
+        .editor {
+            height: 500px;
+        }
+
+        .buttons {
+            text-align: center;
+            padding: 15px;
+        }
+
+        button {
+            padding: 10px 20px;
+            margin: 0 10px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        .convert {
+            background: #007bff;
+            color: white;
+        }
+
+        .copy {
+            background: #28a745;
+            color: white;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>HTML → JS Converter</h1>
+
+    <div class="container">
+        <textarea id="htmlInput"></textarea>
+        <textarea id="jsOutput"></textarea>
+    </div>
+
+    <div class="buttons">
+        <button class="convert" onclick="convert()">Convert</button>
+        <button class="copy" onclick="copyCode()">Copy</button>
+    </div>
+
+    <script>
+        const htmlEditor = CodeMirror.fromTextArea(
+            document.getElementById("htmlInput"),
+            {
+                mode: "htmlmixed",
+                theme: "material-darker",
+                lineNumbers: true
+            }
+        );
+
+        const jsEditor = CodeMirror.fromTextArea(
+            document.getElementById("jsOutput"),
+            {
+                mode: "javascript",
+                theme: "material-darker",
+                lineNumbers: true,
+                readOnly: true
+            }
+        );
+
+        htmlEditor.setValue(`<h1>Google</h1>
+<form action="">
+    <input type="text" id="search">
+    <button id="find">Найти</button>
+</form>`);
+
+        function convert() {
+            const html = htmlEditor.getValue();
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, "text/html");
+
+            let counter = 0;
+            const lines = [];
+            lines.push(`const page = document.createDocumentFragment()`);
+
+            function createVarName(tag) {
+                counter++;
+                return tag + counter;
+            }
+
+            function processNode(node, parentVar) {
+                if (node.nodeType === Node.TEXT_NODE) {
+                    const text = node.textContent.trim();
+                    if (text) {
+                        lines.push(`${parentVar}.textContent = '${text.replace(/'/g, "\\'")}'`);
+                    }
+                    return;
+                }
+
+                if (node.nodeType !== Node.ELEMENT_NODE) return;
+
+                const tag = node.tagName.toLowerCase();
+                const varName = createVarName(tag);
+
+                lines.push(`const ${varName} = document.createElement('${tag}')`);
+
+                for (let attr of node.attributes) {
+                    if (attr.name === 'id') {
+                        lines.push(`${varName}.id = '${attr.value}'`);
+                    } else if (attr.name === 'class') {
+                        lines.push(`${varName}.className = '${attr.value}'`);
+                    } else {
+                        lines.push(`${varName}.setAttribute('${attr.name}', '${attr.value}')`);
+                    }
+                }
+
+                node.childNodes.forEach(child => processNode(child, varName));
+
+                lines.push(`${parentVar}.appendChild(${varName})`);
+            }
+
+            doc.body.childNodes.forEach(node => processNode(node, 'page'));
+
+            jsEditor.setValue(lines.join("\n"));
+        }
+
+        function copyCode() {
+            navigator.clipboard.writeText(jsEditor.getValue());
+            alert("Скопировано!");
+        }
+    </script>
+
+</body>
+
+</html>
