@@ -120,13 +120,20 @@
                 return tag + counter;
             }
 
-            function processNode(node, parentVar) {
+            function escapeJsString(value) {
+                return value
+                    .replace(/\\/g, "\\\\")
+                    .replace(/'/g, "\\'")
+                    .replace(/\n/g, "\\n");
+            }
+
+            function processNode(node, parentVar, parentNamespace = null) {
                 if (node.nodeType === Node.TEXT_NODE) {
-                    const text = node.textContent.trim();
+                    const text = node.textContent;
                     if (text) {
                         const textVar = `text${++counter}`;
-lines.push(`const ${textVar} = document.createTextNode('${text.replace(/'/g, "\\'")}')`);
-lines.push(`${parentVar}.appendChild(${textVar})`);
+                        lines.push(`const ${textVar} = document.createTextNode('${escapeJsString(text)}')`);
+                        lines.push(`${parentVar}.appendChild(${textVar})`);
                     }
                     return;
                 }
@@ -135,20 +142,33 @@ lines.push(`${parentVar}.appendChild(${textVar})`);
 
                 const tag = node.tagName.toLowerCase();
                 const varName = createVarName(tag);
+                const namespace = node.namespaceURI || parentNamespace;
 
-                lines.push(`const ${varName} = document.createElement('${tag}')`);
+                if (namespace && namespace !== 'http://www.w3.org/1999/xhtml') {
+                    lines.push(`const ${varName} = document.createElementNS('${namespace}', '${tag}')`);
+                } else {
+                    lines.push(`const ${varName} = document.createElement('${tag}')`);
+                }
 
                 for (let attr of node.attributes) {
+                    const attrNamespace = attr.namespaceURI;
+                    const escapedValue = escapeJsString(attr.value);
+
+                    if (attrNamespace && attrNamespace !== 'http://www.w3.org/1999/xhtml') {
+                        lines.push(`${varName}.setAttributeNS('${attrNamespace}', '${attr.name}', '${escapedValue}')`);
+                        continue;
+                    }
+
                     if (attr.name === 'id') {
-                        lines.push(`${varName}.id = '${attr.value}'`);
+                        lines.push(`${varName}.id = '${escapedValue}'`);
                     } else if (attr.name === 'class') {
-                        lines.push(`${varName}.className = '${attr.value}'`);
+                        lines.push(`${varName}.className = '${escapedValue}'`);
                     } else {
-                        lines.push(`${varName}.setAttribute('${attr.name}', '${attr.value}')`);
+                        lines.push(`${varName}.setAttribute('${attr.name}', '${escapedValue}')`);
                     }
                 }
 
-                node.childNodes.forEach(child => processNode(child, varName));
+                node.childNodes.forEach(child => processNode(child, varName, namespace));
 
                 lines.push(`${parentVar}.appendChild(${varName})`);
             }
