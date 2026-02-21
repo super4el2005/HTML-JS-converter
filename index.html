@@ -124,7 +124,9 @@
                 if (node.nodeType === Node.TEXT_NODE) {
                     const text = node.textContent.trim();
                     if (text) {
-                        lines.push(`${parentVar}.textContent = '${text.replace(/'/g, "\\'")}'`);
+                        const textVar = `text${++counter}`;
+lines.push(`const ${textVar} = document.createTextNode('${text.replace(/'/g, "\\'")}')`);
+lines.push(`${parentVar}.appendChild(${textVar})`);
                     }
                     return;
                 }
