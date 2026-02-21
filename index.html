@@ -124,16 +124,15 @@
                 return value
                     .replace(/\\/g, "\\\\")
                     .replace(/'/g, "\\'")
-                    .replace(/\r/g, "\\r")
                     .replace(/\n/g, "\\n");
             }
 
             function processNode(node, parentVar, parentNamespace = null) {
                 if (node.nodeType === Node.TEXT_NODE) {
                     const text = node.textContent;
-                    if (text && text.trim()) {
+                    if (text) {
                         const textVar = `text${++counter}`;
-                        lines.push(`const ${textVar} = document.createTextNode('${escapeJsString(text.trim())}')`);
+                        lines.push(`const ${textVar} = document.createTextNode('${escapeJsString(text)}')`);
                         lines.push(`${parentVar}.appendChild(${textVar})`);
                     }
                     return;
@@ -154,10 +153,6 @@
                 for (let attr of node.attributes) {
                     const attrNamespace = attr.namespaceURI;
                     const escapedValue = escapeJsString(attr.value);
-
-                    if (attrNamespace === 'http://www.w3.org/2000/xmlns/') {
-                        continue;
-                    }
 
                     if (attrNamespace && attrNamespace !== 'http://www.w3.org/1999/xhtml') {
                         lines.push(`${varName}.setAttributeNS('${attrNamespace}', '${attr.name}', '${escapedValue}')`);
