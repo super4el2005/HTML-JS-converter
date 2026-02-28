@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>HTML → createElement Converter</title>
+    <title>HTML ↔ JS Converter</title>
 
     <!-- CodeMirror -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
@@ -14,195 +14,202 @@
     <style>
         body {
             margin: 0;
-            font-family: Arial, sans-serif;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: #1e1e1e;
             color: #fff;
             display: flex;
             flex-direction: column;
             height: 100vh;
-            overflow: hidden;
         }
 
         header {
-            padding: 10px 20px;
+            padding: 15px 20px;
             background: #111;
             font-size: 18px;
+            border-bottom: 1px solid #333;
         }
 
         .container {
             display: flex;
             flex: 1;
             overflow: hidden;
+            gap: 2px;
+            background: #333;
         }
 
         .editor-block {
             flex: 1;
-            min-width: 0;
-            /* КЛЮЧЕВОЕ */
             display: flex;
             flex-direction: column;
+            background: #1e1e1e;
             padding: 10px;
-            overflow: hidden;
         }
 
         .editor-title {
-            margin-bottom: 5px;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #aaa;
+            text-transform: uppercase;
+            font-size: 12px;
         }
 
         .CodeMirror {
             flex: 1;
-            height: 100%;
-            border-radius: 6px;
+            border-radius: 4px;
+            font-size: 14px;
         }
 
-        /* Фиксируем ширину контента и включаем скролл */
-        .CodeMirror-scroll {
-            overflow: auto !important;
-        }
-
-        /* Чтобы длинные строки не переносились */
-        .CodeMirror pre {
-            white-space: pre;
+        .actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
         }
 
         button {
-            margin-top: 10px;
-            padding: 8px 12px;
+            flex: 1;
+            padding: 10px;
             background: #007acc;
             border: none;
             border-radius: 4px;
             cursor: pointer;
             color: white;
+            transition: 0.2s;
         }
 
         button:hover {
             background: #005fa3;
+        }
+
+        .copy-html {
+            background: #444;
         }
     </style>
 </head>
 
 <body>
 
-    <header>Конвертер HTML → document.createElement()</header>
+    <header>Двусторонний конвертер HTML ↔ document.createElement()</header>
 
     <div class="container">
         <div class="editor-block">
-            <div class="editor-title">HTML</div>
+            <div class="editor-title">HTML Input / Output</div>
             <textarea id="htmlInput"><div class="box">
   <h1>Hello</h1>
   <p class="text">World</p>
 </div></textarea>
+            <div class="actions">
+                <button class="copy-html" onclick="copy('html')">Скопировать HTML</button>
+            </div>
         </div>
 
         <div class="editor-block">
-            <div class="editor-title">JavaScript</div>
+            <div class="editor-title">JavaScript Input / Output</div>
             <textarea id="jsOutput"></textarea>
-            <button onclick="copyJS()">Скопировать JS</button>
+            <div class="actions">
+                <button onclick="copy('js')">Скопировать JS</button>
+            </div>
         </div>
     </div>
 
     <script>
+        let isUpdating = false;
+
         const htmlEditor = CodeMirror.fromTextArea(document.getElementById("htmlInput"), {
-            mode: "xml",
-            theme: "default",
-            lineNumbers: true
+            mode: "xml", lineNumbers: true, theme: "default", htmlMode: true
         });
 
         const jsEditor = CodeMirror.fromTextArea(document.getElementById("jsOutput"), {
-            mode: "javascript",
-            theme: "default",
-            lineNumbers: true,
-            readOnly: true
+            mode: "javascript", lineNumbers: true, theme: "default"
         });
 
+        // --- Конвертация HTML -> JS ---
         function convertNode(node, parentVar, counter) {
             let code = "";
-
             if (node.nodeType === Node.TEXT_NODE) {
                 const text = node.textContent.trim();
-                if (text) {
-                    code += `${parentVar}.appendChild(document.createTextNode(${JSON.stringify(text)}));\n`;
-                }
+                if (text) code += `${parentVar}.appendChild(document.createTextNode(${JSON.stringify(text)}));\n`;
                 return { code, counter };
             }
-
-            if (node.nodeType !== Node.ELEMENT_NODE) {
-                return { code, counter };
-            }
+            if (node.nodeType !== Node.ELEMENT_NODE) return { code, counter };
 
             const varName = `el${counter++}`;
             code += `const ${varName} = document.createElement("${node.tagName.toLowerCase()}");\n`;
-
             for (let attr of node.attributes) {
                 code += `${varName}.setAttribute("${attr.name}", "${attr.value}");\n`;
             }
-
             for (let child of node.childNodes) {
                 const result = convertNode(child, varName, counter);
                 code += result.code;
                 counter = result.counter;
             }
-
-            if (parentVar) {
-                code += `${parentVar}.appendChild(${varName});\n`;
-            }
-
+            if (parentVar) code += `${parentVar}.appendChild(${varName});\n`;
             return { code, counter };
         }
 
-        function convertHTMLtoJS(html) {
+        function updateJSFromHTML() {
+            if (isUpdating) return;
+            isUpdating = true;
+            const html = htmlEditor.getValue().trim();
             const template = document.createElement("template");
-            template.innerHTML = html.trim();
-
-            const nodes = Array.from(template.content.childNodes)
-                .filter(n =>
-                    n.nodeType === Node.ELEMENT_NODE ||
-                    (n.nodeType === Node.TEXT_NODE && n.textContent.trim())
-                );
+            template.innerHTML = html;
+            const nodes = Array.from(template.content.childNodes).filter(n => n.nodeType === 1 || (n.nodeType === 3 && n.textContent.trim()));
 
             let code = "";
             let counter = 0;
-
-            // Если больше одного корневого узла — создаём fragment
             if (nodes.length > 1) {
                 code += `const fragment = document.createDocumentFragment();\n\n`;
+                nodes.forEach(n => {
+                    const res = convertNode(n, "fragment", counter);
+                    code += res.code + "\n";
+                    counter = res.counter;
+                });
+                code += `// result: fragment`;
+            } else if (nodes.length === 1) {
+                const res = convertNode(nodes[0], null, counter);
+                code = res.code + `\n// result: el0`;
+            }
+            jsEditor.setValue(code);
+            isUpdating = false;
+        }
 
-                for (let node of nodes) {
-                    const result = convertNode(node, "fragment", counter);
-                    code += result.code + "\n";
-                    counter = result.counter;
+        // --- Конвертация JS -> HTML ---
+        function updateHTMLFromJS() {
+            if (isUpdating) return;
+            isUpdating = true;
+            try {
+                const jsCode = jsEditor.getValue();
+                // Создаем изоляцию через функцию, которая возвращает узел
+                const creator = new Function(`
+                    ${jsCode}
+                    try { return fragment; } catch(e) { 
+                        try { return el0; } catch(e2) { return null; } 
+                    }
+                `);
+                const result = creator();
+                if (result instanceof Node) {
+                    const wrap = document.createElement('div');
+                    wrap.appendChild(result.cloneNode(true));
+                    htmlEditor.setValue(wrap.innerHTML.replace(/>/g, '>\n').replace(/</g, '\n<').replace(/\n\n/g, '\n').trim());
                 }
-
-                return code;
+            } catch (err) {
+                console.warn("JS Parsing error: ", err.message);
             }
-
-            // Если один корневой элемент — обычная логика
-            if (nodes.length === 1) {
-                const result = convertNode(nodes[0], null, counter);
-                return result.code;
-            }
-
-            return "";
+            isUpdating = false;
         }
 
+        // Слушатели
+        htmlEditor.on("change", () => { if (!htmlEditor.hasFocus()) return; updateJSFromHTML(); });
+        jsEditor.on("change", () => { if (!jsEditor.hasFocus()) return; updateHTMLFromJS(); });
 
-        function updateConversion() {
-            const html = htmlEditor.getValue();
-            const jsCode = convertHTMLtoJS(html);
-            jsEditor.setValue(jsCode);
+        function copy(type) {
+            const val = type === 'js' ? jsEditor.getValue() : htmlEditor.getValue();
+            navigator.clipboard.writeText(val);
+            alert("Скопировано!");
         }
 
-        function copyJS() {
-            navigator.clipboard.writeText(jsEditor.getValue());
-            alert("JS код скопирован!");
-        }
-
-        htmlEditor.on("change", updateConversion);
-
-        // Первичная конвертация
-        updateConversion();
+        // Старт
+        updateJSFromHTML();
     </script>
-
 </body>
 
 </html>
